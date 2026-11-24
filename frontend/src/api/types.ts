@@ -1,7 +1,7 @@
 /**
- * Shared API data types (the JSON the backend sends/accepts). The frontend can copy or import
- * this file. All timestamps are ISO-8601 UTC strings. All ids are opaque strings, except
- * `Message.id` which is a monotonically increasing integer per server (use for ordering/unread).
+ * UI view-model types. The screens only ever see these; `http.ts` translates the backend's
+ * snake_case API (backend/docs/API.md) into them, and `mock.ts` produces them directly.
+ * Timestamps are ISO-8601 strings. `Message.id` is an increasing integer (ordering / unread).
  */
 
 export type IdentityKind = 'user' | 'guest';
@@ -136,7 +136,7 @@ export interface Message {
 
 export type NotificationType =
   | 'group_invite' | 'new_event' | 'event_reminder' | 'task_reminder'
-  | 'event_updated' | 'event_cancelled' | 'event_min_met' | 'smart_reminder' | 'new_message';
+  | 'event_updated' | 'event_cancelled' | 'event_min_met' | 'smart_reminder';
 
 export interface Notification {
   id: string;
@@ -156,9 +156,10 @@ export interface NotificationPreferences {
   taskReminders: boolean;
   eventChanges: boolean;
   smartReminders: boolean;
-  messages: boolean;
   pushEnabled: boolean;
   emailEnabled: boolean;
+  /** hours before an event that the "coming up" reminder is sent (1–168) */
+  reminderLeadHours: number;
 }
 
 export interface PlaceResult {
@@ -172,26 +173,3 @@ export interface PlaceResult {
 export interface ApiError {
   error: { code: string; message: string; details?: unknown };
 }
-
-/** Realtime (WebSocket) – server → client */
-export type ServerWsMessage =
-  | { type: 'ready'; me: Me }
-  | { type: 'message.new'; message: Message }
-  | { type: 'message.ack'; clientId?: string; message: Message }
-  | { type: 'event.updated'; event: EventSummary; groupIds: string[] }
-  | { type: 'event.deleted'; eventId: string; groupIds: string[] }
-  | { type: 'rsvp.changed'; eventId: string; goingCount: number; minimumMet: boolean; full: boolean; participants: EventParticipant[] }
-  | { type: 'task.changed'; eventId: string; task: Task }
-  | { type: 'task.deleted'; eventId: string; taskId: string }
-  | { type: 'group.updated'; groupId: string }
-  | { type: 'group.removed'; groupId: string }
-  | { type: 'notification.new'; notification: Notification }
-  | { type: 'error'; code: string; message: string; clientId?: string }
-  | { type: 'pong' };
-
-/** Realtime (WebSocket) – client → server */
-export type ClientWsMessage =
-  | { type: 'auth'; token: string }
-  | { type: 'message.send'; groupId: string; body: string; clientId?: string }
-  | { type: 'read'; groupId: string; upToMessageId?: number }
-  | { type: 'ping' };

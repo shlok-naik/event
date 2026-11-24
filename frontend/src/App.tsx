@@ -3,7 +3,7 @@ import { useAuth } from './lib/auth';
 import { RealtimeBridge } from './lib/realtime';
 import { Shell } from './components/Shell';
 import { Spinner } from './components/ui';
-import { Join, Login, Signup } from './pages/Auth';
+import { GuestLogin, Join, Login, Signup } from './pages/Auth';
 import { Home } from './pages/Home';
 import { Chat } from './pages/Chat';
 import { GroupInfo, GroupNew, MapPage } from './pages/Groups';
@@ -24,6 +24,8 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/join/:token" element={<Join />} />
+      <Route path="/invite" element={<Join />} />
+      <Route path="/guest-login" element={<GuestLogin />} />
       <Route element={<Protected />}>
         <Route index element={<Home />} />
         <Route path="map" element={<MapPage />} />

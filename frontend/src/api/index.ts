@@ -8,5 +8,5 @@ import { setHttpToken } from './http';
 export const setAuthToken = (t: string | null) => { setHttpToken(t); api.setToken?.(t); };
 export { resetMockData } from './mock';
 export { ApiError } from './api';
-export type { Api } from './api';
+export type { Api, RealtimeEvent } from './api';
 export * from './types';

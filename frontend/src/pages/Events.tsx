@@ -124,7 +124,7 @@ export function EventPage() {
             {!locked && <JoinButton event={e} small={false} />}</div>
           <Progress value={e.goingCount} max={e.minParticipants} ok={e.minimumMet} />
           <div className={`stat ${e.minimumMet ? 'ok' : 'warn'}`} data-testid="min-status"><Icon name={e.minimumMet ? 'check' : 'users'} size={20} /><div className="small"><b>{e.minimumMet ? 'Enough people have joined' : `Needs ${plural(need, 'more person', 'more people')}`}</b><br />{e.minimumMet ? 'This event is on.' : `${e.goingCount} of ${e.minParticipants} minimum so far.`}{e.full && ' It is now full.'}</div></div>
-          {tc.total > 0 && <div className={`stat ${tc.unassigned === 0 ? 'ok' : 'warn'}`} data-testid="task-status"><Icon name={tc.unassigned === 0 ? 'check' : 'tasks'} size={20} /><div className="small"><b>{tc.unassigned === 0 ? 'All tasks are assigned' : `${plural(tc.unassigned, 'task')} still need someone`}</b><br />{tc.completed} of {tc.total} done</div></div>}
+          {tc.total > 0 && <div className={`stat ${tc.unassigned === 0 ? 'ok' : 'warn'}`} data-testid="task-status"><Icon name={tc.unassigned === 0 ? 'check' : 'tasks'} size={20} /><div className="small"><b>{tc.unassigned === 0 ? 'All tasks are assigned' : `${plural(tc.unassigned, 'task')} still ${tc.unassigned === 1 ? 'needs' : 'need'} someone`}</b><br />{tc.completed} of {tc.total} done</div></div>}
         </div>
 
         <section className="card" aria-labelledby="tasks">

@@ -65,7 +65,7 @@ const step = async (name, fn) => { try { await fn(); console.log('  ✓', name);
     await m.getByRole('link', { name: 'Open Bouldering night' }).first().click();
     await m.getByRole('heading', { name: /Who's going/ }).waitFor();
     await m.getByTestId('min-status').getByText(/Needs 1 more person/).waitFor();
-    await m.getByTestId('task-status').getByText(/tasks? still need someone/).waitFor();
+    await m.getByTestId('task-status').getByText(/tasks? still needs? someone/).waitFor();
     await m.getByRole('region', { name: /Event location/ }).waitFor();
     const snacks = m.getByTestId('task').filter({ hasText: 'Snacks' });
     await snacks.getByRole('button', { name: 'Claim' }).click();
@@ -127,7 +127,7 @@ const step = async (name, fn) => { try { await fn(); console.log('  ✓', name);
   await m.screenshot({ path: `${SHOTS}/m-settings.png` });
   console.log('Guest · mobile');
   const g = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  await g.goto(BASE + '/join/guest-demo');
+  await g.goto(BASE + '/invite?token=guest-demo');
   await step('invite page shows group + inviter, asks for name only', async () => {
     await g.getByRole('heading', { name: 'Weekend hikers' }).waitFor(); await g.getByText(/Bob Patel invited you/).waitFor();
     await g.getByRole('button', { name: 'Join group' }).click(); await g.getByText(/Tell us your name/).waitFor();

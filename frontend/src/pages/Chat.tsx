@@ -35,7 +35,7 @@ export function Chat() {
 
   // read receipts: mark the group read whenever new messages arrive while open
   const lastId = msgs.data?.messages.at(-1)?.id;
-  useEffect(() => { if (lastId) api.groups.markRead(id).then(() => qc.invalidateQueries({ queryKey: ['groups'] })).catch(() => {}); }, [id, lastId, qc]);
+  useEffect(() => { if (lastId) api.groups.markRead(id, lastId).then(() => qc.invalidateQueries({ queryKey: ['groups'] })).catch(() => {}); }, [id, lastId, qc]);
 
   const list = useMemo(() => (msgs.data?.messages ?? []).filter((m) => !(m.type === 'event' && (!m.event || isGone(m.event, now)))), [msgs.data, now]);
   useLayoutEffect(() => { const el = scroller.current; if (el && stick.current) el.scrollTop = el.scrollHeight; }, [list.length, pinned.data?.length]);

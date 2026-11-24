@@ -1,16 +1,17 @@
 import { useEffect } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { api, type EventSummary, type Message, type ServerWsMessage } from '../api';
+import { api, type EventSummary, type Message, type RealtimeEvent } from '../api';
 import { useAuth } from './auth';
 import { useToast } from './toast';
 
-const merge = (old: EventSummary, next: EventSummary): EventSummary => ({ ...next, myRsvp: old.myRsvp, groupIds: old.groupIds });
+type Counts = Pick<EventSummary, 'goingCount' | 'minimumMet' | 'full'>;
 
-function patchEvent(qc: QueryClient, ev: EventSummary) {
-  qc.setQueriesData<{ messages: Message[]; hasMore: boolean }>({ queryKey: ['messages'] }, (d) =>
-    d && { ...d, messages: d.messages.map((m) => (m.event?.id === ev.id ? { ...m, event: merge(m.event, ev) } : m)) });
-  qc.setQueriesData<EventSummary[]>({ queryKey: ['pinned'] }, (d) => d?.map((e) => (e.id === ev.id ? merge(e, ev) : e)));
-  qc.setQueryData<EventSummary[]>(['events'], (d) => d?.map((e) => (e.id === ev.id ? merge(e, ev) : e)));
+/** Patch headcounts everywhere an event summary is cached, so chat cards / pins / lists update instantly. */
+function patchCounts(qc: QueryClient, id: string, c: Counts) {
+  const patch = (e: EventSummary) => (e.id === id ? { ...e, ...c } : e);
+  qc.setQueriesData<{ messages: Message[]; hasMore: boolean }>({ queryKey: ['messages'] }, (d) => d && { ...d, messages: d.messages.map((m) => (m.event?.id === id ? { ...m, event: patch(m.event) } : m)) });
+  qc.setQueriesData<EventSummary[]>({ queryKey: ['pinned'] }, (d) => d?.map(patch));
+  qc.setQueryData<EventSummary[]>(['events'], (d) => d?.map(patch));
 }
 
 /** Applies server pushes to the query cache so every screen updates live. */
@@ -21,37 +22,33 @@ export function RealtimeBridge() {
 
   useEffect(() => {
     if (!token) return;
-    const onMsg = (m: ServerWsMessage) => {
+    const refresh = (...keys: string[]) => keys.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    const onMsg = (m: RealtimeEvent) => {
       switch (m.type) {
         case 'message.new':
-          qc.setQueryData<{ messages: Message[]; hasMore: boolean }>(['messages', m.message.groupId], (d) =>
-            d && (d.messages.some((x) => x.id === m.message.id) ? d : { ...d, messages: [...d.messages, m.message] }));
-          qc.invalidateQueries({ queryKey: ['groups'] });
+          if (m.message.type === 'event') refresh('messages', 'pinned', 'events');     // event cards carry per-user RSVP state: refetch
+          else qc.setQueryData<{ messages: Message[]; hasMore: boolean }>(['messages', m.message.groupId], (d) => d && (d.messages.some((x) => x.id === m.message.id) ? d : { ...d, messages: [...d.messages, m.message] }));
+          refresh('groups');
           break;
-        case 'event.updated':
-          patchEvent(qc, m.event);
-          qc.invalidateQueries({ queryKey: ['event', m.event.id] });
-          qc.invalidateQueries({ queryKey: ['events'] });
-          for (const g of m.groupIds) qc.invalidateQueries({ queryKey: ['pinned', g] });
-          qc.invalidateQueries({ queryKey: ['groups'] });
+        case 'event.changed':
+          refresh('events', 'pinned', 'messages', 'groups', 'tasks'); qc.invalidateQueries({ queryKey: ['event', m.eventId] });
           break;
         case 'rsvp.changed':
+          patchCounts(qc, m.eventId, { goingCount: m.goingCount, minimumMet: m.minimumMet, full: m.full }); qc.invalidateQueries({ queryKey: ['event', m.eventId] });
+          break;
         case 'task.changed':
-        case 'task.deleted':
-          qc.invalidateQueries({ queryKey: ['event', m.eventId] });
-          qc.invalidateQueries({ queryKey: ['tasks'] });
+          qc.invalidateQueries({ queryKey: ['event', m.eventId] }); refresh('tasks', 'events');
           break;
         case 'event.deleted':
-          qc.removeQueries({ queryKey: ['event', m.eventId] });
-          for (const k of ['events', 'pinned', 'tasks', 'messages', 'groups']) qc.invalidateQueries({ queryKey: [k] });
+          for (const id of m.eventIds) qc.removeQueries({ queryKey: ['event', id] });
+          refresh('events', 'pinned', 'tasks', 'messages', 'groups');
           break;
         case 'notification.new':
-          qc.invalidateQueries({ queryKey: ['notifications'] });
-          toast(m.notification.title);
+          refresh('notifications'); toast(m.notification.title);
           break;
-        case 'group.updated':
+        case 'group.changed':
         case 'group.removed':
-          for (const k of ['groups', 'locations', 'members']) qc.invalidateQueries({ queryKey: [k] });
+          refresh('groups', 'locations', 'members', 'group');
           break;
       }
     };

@@ -1,9 +1,9 @@
 /* In-memory demo backend that mimics the real API's behaviour (permissions, capacity, tasks, unread,
    expiry). Lets the whole UI be built and tested without a server. State lives for the page session. */
-import { ApiError, type Api, type CreateEventInput } from './api';
+import { ApiError, type Api, type CreateEventInput, type RealtimeEvent } from './api';
 import type {
   AuthResponse, EventDetail, EventSummary, Group, GroupMember, GroupRole, Location, Me, Message, Notification,
-  NotificationPreferences, PlaceResult, PublicProfile, ServerWsMessage, Task,
+  NotificationPreferences, PlaceResult, PublicProfile, Task,
 } from './types';
 
 const H = 3_600_000, M = 60_000;
@@ -45,13 +45,13 @@ export function createMockApi(): Api {
   const invites = new Map<string, { groupId: string; email: string; by: string }>();
   let msgSeq = 100;
   let me: string | null = null;
-  const handlers = new Set<(m: ServerWsMessage) => void>();
-  const push = (m: ServerWsMessage) => handlers.forEach((h) => h(m));
+  const handlers = new Set<(m: RealtimeEvent) => void>();
+  const push = (m: RealtimeEvent) => handlers.forEach((h) => h(m));
 
   const mkUser = (u: Omit<User, 'id'>, id = uid()) => { users.set(id, { id, ...u }); return id; };
   const profile = (id: string | null): PublicProfile | null => { const u = id && users.get(id); return u ? { id: u.id, displayName: u.displayName, kind: u.kind } : null; };
   const toMe = (u: User): Me => ({ id: u.id, displayName: u.displayName, kind: u.kind, email: u.email });
-  const defaultPrefs = (): NotificationPreferences => ({ groupInvites: true, newEvents: true, eventReminders: true, taskReminders: true, eventChanges: true, smartReminders: true, messages: false, pushEnabled: true, emailEnabled: true });
+  const defaultPrefs = (): NotificationPreferences => ({ groupInvites: true, newEvents: true, eventReminders: true, taskReminders: true, eventChanges: true, smartReminders: true, pushEnabled: true, emailEnabled: true, reminderLeadHours: 24 });
   const authed = (): User => { const u = me && users.get(me); if (!u) throw new ApiError(401, 'unauthorized', 'Please sign in again'); return u; };
   const needMember = (g: string): MGroup => { const gr = groups.get(g); if (!gr || !gr.members.has(authed().id)) throw new ApiError(404, 'not_found', 'Group not found'); return gr; };
   const live = () => [...events.values()].filter((e) => endOf(e) + RETENTION > Date.now());
@@ -111,9 +111,10 @@ export function createMockApi(): Api {
   };
   const broadcastEvent = (e: MEvent) => {
     if (!me) return;
-    const s = summary(e, undefined); const gids = e.groupIds.filter((g) => groups.get(g)?.members.has(me!));
-    push({ type: 'event.updated', event: { ...s, groupIds: gids }, groupIds: gids });
-    push({ type: 'rsvp.changed', eventId: e.id, goingCount: s.goingCount, minimumMet: s.minimumMet, full: s.full, participants: [...e.going].map(([id, at]) => ({ ...profile(id)!, rsvpAt: at })) });
+    const s = summary(e, undefined);
+    push({ type: 'event.changed', eventId: e.id });
+    push({ type: 'rsvp.changed', eventId: e.id, goingCount: s.goingCount, minimumMet: s.minimumMet, full: s.full });
+    push({ type: 'task.changed', eventId: e.id });
   };
 
   /* ---------- persistence: survives page reloads (localStorage) ---------- */
@@ -218,11 +219,12 @@ export function createMockApi(): Api {
       },
       async logout() { me = null; },
       async me() { await sleep(60); return toMe(authed()); },
+      async guestSession() { await sleep(); throw new ApiError(401, 'invalid_link', 'This sign-in link has expired or was already used'); },
+      async requestGuestLink() { await sleep(); },
       async upgrade(i) {
         await sleep(); const u = authed();
         if (u.kind !== 'guest') throw new ApiError(409, 'not_a_guest', 'Only guest accounts can be upgraded');
-        dupFree(i.email);
-        Object.assign(u, { kind: 'user', email: i.email, password: i.password, displayName: i.displayName });   // same id => data kept
+        Object.assign(u, { kind: 'user', password: i.password, displayName: i.displayName });   // same id => data kept
         return { token: [...sessions].find(([, v]) => v === u.id)![0], expiresAt: iso(Date.now() + 30 * 24 * H), me: toMe(u) };
       },
     },
@@ -341,10 +343,9 @@ export function createMockApi(): Api {
         return live().filter((e) => e.status === 'active' && endOf(e) > Date.now()).flatMap((e) => e.tasks.filter((tk) => tk.assignee === u.id && !tk.completedAt).map((tk) => ({ ...taskDto(e, tk), event: { id: e.id, name: e.name, startsAt: e.startsAt, status: e.status } })))
           .sort((a, b) => a.event.startsAt.localeCompare(b.event.startsAt));
       },
-      async claim(id) { return mutate(id, (e, tk, u) => { if (!e.going.has(u)) throw new ApiError(409, 'rsvp_required', 'RSVP to the event before claiming tasks'); if (tk.assignee) throw new ApiError(409, 'task_already_claimed', 'Someone else already claimed this task'); tk.assignee = u; tk.claimedAt = iso(Date.now()); }); },
-      async unclaim(id) { return mutate(id, (_e, tk, u) => { if (tk.assignee !== u) throw new ApiError(403, 'forbidden', 'Only the assignee can change this task'); if (tk.completedAt) throw new ApiError(409, 'task_completed', 'Mark the task as not completed first'); tk.assignee = null; tk.claimedAt = null; }); },
-      async complete(id) { return mutate(id, (_e, tk, u) => { if (tk.assignee !== u) throw new ApiError(403, 'forbidden', 'Only the assignee can change this task'); tk.completedAt ??= iso(Date.now()); }); },
-      async uncomplete(id) { return mutate(id, (_e, tk, u) => { if (tk.assignee !== u) throw new ApiError(403, 'forbidden', 'Only the assignee can change this task'); tk.completedAt = null; }); },
+      async claim(_e, id) { return mutate(id, (e, tk, u) => { if (!e.going.has(u)) throw new ApiError(409, 'rsvp_required', 'RSVP to the event before claiming tasks'); if (tk.assignee) throw new ApiError(409, 'task_already_claimed', 'Someone else already claimed this task'); tk.assignee = u; tk.claimedAt = iso(Date.now()); }); },
+      async unclaim(_e, id) { return mutate(id, (_e, tk, u) => { if (tk.assignee !== u) throw new ApiError(403, 'forbidden', 'Only the assignee can change this task'); if (tk.completedAt) throw new ApiError(409, 'task_completed', 'Mark the task as not completed first'); tk.assignee = null; tk.claimedAt = null; }); },
+      async complete(_e, id) { return mutate(id, (_e, tk, u) => { if (tk.assignee !== u) throw new ApiError(403, 'forbidden', 'Only the assignee can change this task'); tk.completedAt ??= iso(Date.now()); }); },
     },
     notifications: {
       async list() { await sleep(); const l = notifs.get(authed().id) ?? []; return { notifications: l, unreadCount: l.filter((n) => !n.readAt).length }; },
