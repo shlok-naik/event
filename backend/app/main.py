@@ -20,6 +20,10 @@ from app.services.maps import MapsClient
 from app.services.runtime import configure
 
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO; the Geocoding API takes the key as a query
+# parameter, so that would write the Google Maps key into the server log.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def create_app(settings: Settings | None = None, database: Database | None = None, maps: MapsClient | None = None) -> FastAPI:

@@ -36,10 +36,12 @@ async def websocket(ws: WebSocket):
         principal = await run_in_threadpool(_authenticate, ws.app, str(first.get("token", "")))
         if first.get("type") != "auth":
             raise AppError("Expected auth message")
-    except (asyncio.TimeoutError, ValueError, AppError, AttributeError, WebSocketDisconnect):
+    except WebSocketDisconnect:
+        return  # client went away before authenticating; nothing to close
+    except (asyncio.TimeoutError, ValueError, AppError, AttributeError):
         try:
             await ws.close(code=4401)
-        except RuntimeError:
+        except Exception:  # client may already be gone (RuntimeError / ClientDisconnected)
             pass
         return
 
